@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import pandas as pd
-
+#支持可视化
 
 def plot_causal_chain(findings, src, tgt, ax=None):
     if ax is None:

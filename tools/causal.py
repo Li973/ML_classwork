@@ -97,11 +97,6 @@ class EventAnalyzer:
 
 
 class WeakSignalCausalScanner:
-    """
-    【2024新】弱信号因果探测器：用Ridge回归 + Spearman秩相关 + 滞后聚合
-    适合：小样本、高噪声、非线性弱依赖（如M2→CPI）
-    论文：Chern et al., Weak Causal Discovery in Macroeconomics, ICML 2025
-    """
 
     def __init__(self, window=18, step=2, max_lag=6, rho_thresh=0.25):
         self.window = window
@@ -118,7 +113,7 @@ class WeakSignalCausalScanner:
             for src in vars:
                 for tgt in vars:
                     if src == tgt: continue
-                    # 聚合多个滞后（lag1~lag6）→ 提升信噪比
+                    #聚合多个滞后（lag1~lag6）
                     y = sub[tgt].iloc[self.max_lag:].values
                     X_cols = []
                     for lag in range(1, self.max_lag + 1):
@@ -127,14 +122,13 @@ class WeakSignalCausalScanner:
                     X = np.column_stack(X_cols)
                     if X.shape[0] < 8: continue
 
-                    # 用RidgeCV防过拟合（比Lasso更稳）
+                    #用RidgeCV防过拟合
                     try:
                         model = RidgeCV(alphas=np.logspace(-3, 1, 20)).fit(X, y)
-                        coef_sum = np.sum(model.coef_)  # 累积效应
+                        coef_sum = np.sum(model.coef_)
                         if abs(coef_sum) < 1e-3: continue
 
-                        # Spearman秩相关（对非线性更鲁棒）
-                        x_agg = np.mean(X, axis=1)  # 平均滞后信号
+                        x_agg = np.mean(X, axis=1)
                         rho, _ = spearmanr(x_agg, y)
                         if abs(rho) > self.rho_thresh:
                             mid = sub.index[len(sub) // 2]
@@ -151,11 +145,6 @@ class WeakSignalCausalScanner:
 
 
 class RegimeSwitchingCausalDetector:
-    """
-    【2024新】机制转换因果检测：先识别高波动期（VIX>25 or |Δrate|>0.3%），再检验因果
-    适合：只在“危机/政策突变期”存在的因果（如加息期：利率→汇率）
-    论文：Mian et al., Regime-Aware Causal Discovery, NeurIPS 2024
-    """
 
     def __init__(self, regime_col='VIX恐慌指数', threshold=25):
         self.regime_col = regime_col
@@ -163,7 +152,6 @@ class RegimeSwitchingCausalDetector:
 
     def detect(self, df):
         if self.regime_col not in df.columns:
-            # 退化为用利率变化识别
             rate_col = [c for c in df.columns if '利率' in c or '收益率' in c]
             if rate_col:
                 self.regime_col = rate_col[0]
@@ -173,7 +161,7 @@ class RegimeSwitchingCausalDetector:
         else:
             regime_series = df[self.regime_col] > self.threshold
 
-        # 提取高波动子序列（连续≥3个月为一个事件）
+        #提取高波动子序列
         events = []
         in_event = False
         start = None
@@ -192,7 +180,6 @@ class RegimeSwitchingCausalDetector:
         for start, end in events:
             sub = df.loc[start:end]
             if len(sub) < 6: continue
-            # 在事件期内做简单Granger检验（不控制太多，保灵敏度）
             for src in df.columns:
                 for tgt in df.columns:
                     if src == tgt: continue
@@ -200,7 +187,7 @@ class RegimeSwitchingCausalDetector:
                     x = sub[src].shift(1).iloc[1:].values
                     if len(y) < 5: continue
                     rho = np.corrcoef(x, y)[0, 1]
-                    if abs(rho) > 0.4:  # 事件期内要求强相关
+                    if abs(rho) > 0.4:  #事件期内要求强相关
                         findings.append({
                             'src': src, 'tgt': tgt,
                             'corr': round(rho, 3),
